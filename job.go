@@ -402,6 +402,70 @@ func (j *Job) HasQueuedBuild() {
 	panic("Not Implemented yet")
 }
 
+// 为了简化操作,这个函数只poll了两次,
+// 一次是更新Job信息,判断任务是不是存在,是不是在队列中
+// 一次是更新Build信息,判断任务是不是正在运行
+func (j *Job) InvokeCustomised(params map[string]string) (string,int64,error) {
+
+	status,err := j.Poll()
+
+	if err != nil {
+		return "",0,err
+	}
+
+	if status == 404 {
+		return "NOT_FOUND",0,nil
+	}
+
+	if j.Raw.InQueue {
+		return "QUEUE",0,nil
+	}
+
+	lastBuild,err := j.GetLastBuild()
+	if lastBuild.Raw.Building {
+		return "RUNNING",0,nil
+	}
+
+	endpoint := "/build"
+	parameters :=  []ParameterDefinition{}
+	for _, property := range j.Raw.Property {
+		parameters = append(parameters, property.ParameterDefinitions...)
+	}
+
+	if len(parameters) > 0 {
+		endpoint = "/buildWithParameters"
+	}
+	data := url.Values{}
+	for k, v := range params {
+		data.Set(k, v)
+	}
+	resp, err := j.Jenkins.Requester.Post(j.Base+endpoint, bytes.NewBufferString(data.Encode()), nil, nil)
+	if err != nil {
+		return "",0, err
+	}
+
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return "",0, fmt.Errorf("Could not invoke job %q: %s", j.GetName(), resp.Status)
+	}
+
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return "",0, errors.New("Don't have key \"Location\" in response of header")
+	}
+
+	u, err := url.Parse(location)
+	if err != nil {
+		return "",0, err
+	}
+
+	number, err := strconv.ParseInt(path.Base(u.Path), 10, 64)
+	if err != nil {
+		return "",0, err
+	}
+
+	return "",number, nil
+}
+
 func (j *Job) InvokeSimple(params map[string]string) (int64, error) {
 	isQueued, err := j.IsQueued()
 	if err != nil {

@@ -262,6 +262,15 @@ func (j *Jenkins) BuildJob(name string, options ...interface{}) (int64, error) {
 	return job.InvokeSimple(params)
 }
 
+func (j *Jenkins) Build(name string, options ...interface{}) (string,int64,error) {
+	job := Job{Jenkins: j, Raw: new(JobResponse), Base: "/job/" + name}
+	var params map[string]string
+	if len(options) > 0 {
+		params, _ = options[0].(map[string]string)
+	}
+	return job.InvokeCustomised(params)
+}
+
 func (j *Jenkins) GetNode(name string) (*Node, error) {
 	node := Node{Jenkins: j, Raw: new(NodeResponse), Base: "/computer/" + name}
 	status, err := node.Poll()
